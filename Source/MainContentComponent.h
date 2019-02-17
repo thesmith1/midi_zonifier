@@ -196,12 +196,21 @@ private:
 			catch (nlohmann::detail::type_error) {
 				// The message stays the same (no file loaded)
 			}
+			midiOutputDevice->sendMessageNow(newMessage);
+			postMessageToList(newMessage, source->getName());
+		}
+		else if (message.isProgramChange()) {
+			const MessageManagerLock mmLock;
+			// Change current file
+			int programChangeNumber = message.getProgramChangeNumber();
+			if (programChangeNumber == 0) loadPreviousFile();
+			if (programChangeNumber == 1) loadNextFile();
 		} else {
 			// MIDI Thru
+			midiOutputDevice->sendMessageNow(newMessage);
+			postMessageToList(newMessage, source->getName());
 		}
-		midiOutputDevice->sendMessageNow(newMessage);
 		postMessageToList(message, source->getName());
-		postMessageToList(newMessage, source->getName());
 	}
 	
 	void openDirectory() {
