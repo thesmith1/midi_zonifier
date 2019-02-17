@@ -13,8 +13,7 @@ using json = nlohmann::json;
 
 //==============================================================================
 class MainContentComponent : public Component,
-	private MidiInputCallback,
-	private MidiKeyboardStateListener
+	private MidiInputCallback
 {
 public:
 	MainContentComponent()
@@ -81,7 +80,7 @@ public:
 		addAndMakeVisible(currentFileNameLabel);
 		currentFileNameLabel.setText("No file loaded...", dontSendNotification);
 
-		currentFileIdx = new AudioParameterInt("currentFileIdx", "Loaded File", 0, 4096, 0);
+		currentFileIdx = 0;
 		currentZones = initializeZones();
 
 		// MIDI Display
@@ -172,7 +171,7 @@ private:
 	}
 
 	bool setMidiOutput(int index) {
-		midiOutputDevice = MidiOutput::openDevice(index);
+		midiOutputDevice.reset(MidiOutput::openDevice(index));
 		midiOutputList.setSelectedId(index + 1, dontSendNotification);
 		lastOutputIndex = index;
 		return midiOutputDevice != nullptr;
@@ -204,27 +203,7 @@ private:
 		postMessageToList(message, source->getName());
 		postMessageToList(newMessage, source->getName());
 	}
-
-	void handleNoteOn(MidiKeyboardState*, int midiChannel, int midiNoteNumber, float velocity) override
-	{
-		if (!isAddingFromMidiInput)
-		{
-			auto m = MidiMessage::noteOn(midiChannel, midiNoteNumber, velocity);
-			m.setTimeStamp(Time::getMillisecondCounterHiRes() * 0.001);
-			postMessageToList(m, "On-Screen Keyboard");
-		}
-	}
-
-	void handleNoteOff(MidiKeyboardState*, int midiChannel, int midiNoteNumber, float /*velocity*/) override
-	{
-		if (!isAddingFromMidiInput)
-		{
-			auto m = MidiMessage::noteOff(midiChannel, midiNoteNumber);
-			m.setTimeStamp(Time::getMillisecondCounterHiRes() * 0.001);
-			postMessageToList(m, "On-Screen Keyboard");
-		}
-	}
-
+	
 	void openDirectory() {
 		FileChooser fileChooser("Select the folder containing your setlist...",
 			File::getSpecialLocation(File::userDesktopDirectory));
@@ -236,9 +215,9 @@ private:
 				setlist.push_back(readFile(iter.getFile()));
 				setlistNames.push_back(iter.getFile().getFileName());
 			}
-			*currentFileIdx = 0;
-			currentZones = setlist[(int)*currentFileIdx];
-			currentFileNameLabel.setText(setlistNames[*currentFileIdx], dontSendNotification);
+			currentFileIdx = 0;
+			currentZones = setlist[currentFileIdx];
+			currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
 		}
 	}
 
@@ -250,17 +229,17 @@ private:
 	}
 
 	void loadPreviousFile() {
-		if ((int)*currentFileIdx <= 0) return;
-		*currentFileIdx = (int)*currentFileIdx - 1;
-		currentZones = setlist[(int)*currentFileIdx];
-		currentFileNameLabel.setText(setlistNames[*currentFileIdx], dontSendNotification);
+		if (currentFileIdx <= 0) return;
+		currentFileIdx = currentFileIdx - 1;
+		currentZones = setlist[currentFileIdx];
+		currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
 	}
 
 	void loadNextFile() {
-		if ((int)*currentFileIdx >= setlist.size() - 1) return;
-		*currentFileIdx = (int)*currentFileIdx + 1;
-		currentZones = setlist[(int)*currentFileIdx];
-		currentFileNameLabel.setText(setlistNames[*currentFileIdx], dontSendNotification);
+		if (currentFileIdx >= setlist.size() - 1) return;
+		currentFileIdx = currentFileIdx + 1;
+		currentZones = setlist[currentFileIdx];
+		currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
 	}
 
 	json initializeZones() {
@@ -320,10 +299,7 @@ private:
 			seconds,
 			millis);
 
-		// auto description = getMidiMessageDescription(message);
-		auto description = message.getDescription();
-
-		String midiMessageString(timecode + "  -  " + description + " (" + source + ")");
+		String midiMessageString(timecode + "  -  " + message.getDescription() + " (" + source + ")");
 		logMessage(midiMessageString);
 	}
 
@@ -336,7 +312,7 @@ private:
 	bool isAddingFromMidiInput = false;
 
 	// MIDI Output
-	MidiOutput* midiOutputDevice;
+	std::unique_ptr<MidiOutput> midiOutputDevice;
 	ComboBox midiOutputList;
 	Label midiOutputListLabel;
 	int lastOutputIndex = 0;
@@ -356,7 +332,7 @@ private:
 	json currentZones;
 	std::vector<json> setlist;
 	std::vector<String> setlistNames;
-	AudioParameterInt* currentFileIdx;
+	int currentFileIdx;
 
 	//==============================================================================
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainContentComponent);
