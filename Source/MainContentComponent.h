@@ -20,32 +20,19 @@ public:
 		: startTime(Time::getMillisecondCounterHiRes() * 0.001)
 	{
 		setOpaque(true);
-
+		
 		// MIDI In
-		addAndMakeVisible(midiInputListLabel);
-		midiInputListLabel.setText("MIDI Input:", dontSendNotification);
-		midiInputListLabel.attachToComponent(&midiInputList, true);
-
-		addAndMakeVisible(midiInputList);
-		midiInputList.setTextWhenNoChoicesAvailable("No MIDI Inputs Enabled");
-		auto midiInputs = MidiInput::getDevices();
-		midiInputList.addItemList(midiInputs, 1);
-		midiInputList.onChange = [this] { setMidiInput(midiInputList.getSelectedItemIndex()); };
-
-		// find the first enabled device and use that by default
-		for (auto midiInput : midiInputs)
-		{
-			if (deviceManager.isMidiInputEnabled(midiInput))
-			{
-				setMidiInput(midiInputs.indexOf(midiInput));
-				break;
-			}
+		addAndMakeVisible(midiInputsLabel);
+		midiInputsLabel.setText("Active MIDI Inputs:", dontSendNotification);
+		midiInputsNames = MidiInput::getDevices();
+		midiInputButtons = OwnedArray<ToggleButton>();
+		for (auto in : midiInputsNames) {
+			auto newButton = new ToggleButton(in);
+			addAndMakeVisible(newButton);
+			midiInputButtons.add(newButton);
+			newButton->onClick = [this, newButton] { updateToggleState(newButton); };
 		}
-
-		// if no enabled devices were found just use the first one in the list
-		if (midiInputList.getSelectedId() == 0)
-			setMidiInput(0);
-
+		
 		// MIDI Out
 		addAndMakeVisible(midiOutputListLabel);
 		midiOutputListLabel.setText("MIDI Output:", dontSendNotification);
@@ -112,7 +99,10 @@ public:
 	{
 		auto area = getLocalBounds();
 
-		midiInputList.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
+		midiInputsLabel.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
+		for (auto button : midiInputButtons) {
+			button->setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
+		}
 		midiOutputList.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
 		directoryOpenButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
 		previousFileButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
@@ -151,6 +141,22 @@ private:
 	{
 		midiMessagesBox.moveCaretToEnd();
 		midiMessagesBox.insertTextAtCaret(m + newLine);
+	}
+
+	void updateToggleState(ToggleButton* button) {
+		auto state = button->getToggleState();
+		if (state) addMidiInput(button->getButtonText());
+		else removeMidiInput(button->getButtonText());
+	}
+
+	void addMidiInput(String name) {
+		if (!deviceManager.isMidiInputEnabled(name))
+			deviceManager.setMidiInputEnabled(name, true);
+		deviceManager.addMidiInputCallback(name, this);
+	}
+
+	void removeMidiInput(String name) {
+		deviceManager.removeMidiInputCallback(name, this);
 	}
 
 	void setMidiInput(int index)
@@ -315,10 +321,9 @@ private:
 	//==============================================================================
 	// MIDI Input
 	AudioDeviceManager deviceManager;
-	ComboBox midiInputList;
-	Label midiInputListLabel;
-	int lastInputIndex = 0;
-	bool isAddingFromMidiInput = false;
+	Label midiInputsLabel;
+	StringArray midiInputsNames;
+	OwnedArray<ToggleButton> midiInputButtons;
 
 	// MIDI Output
 	std::unique_ptr<MidiOutput> midiOutputDevice;
