@@ -1,8 +1,15 @@
 #pragma once
 #include "../JuceLibraryCode/JuceHeader.h"
 #include <Windows.h>
+#include "../ExternalLib/json.hpp"
 
 #define DEBUG 1
+
+#define MIN_NOTE_NUMBER 0
+#define MAX_NOTE_NUMBER 127
+#define DEFAULT_OUT_CHANNEL 1
+
+using json = nlohmann::json;
 
 //==============================================================================
 class MainContentComponent : public Component,
@@ -61,6 +68,22 @@ public:
 		if (midiOutputList.getSelectedId() == 0)
 			setMidiOutput(0);
 
+		// MIDI Zones Management
+		addAndMakeVisible(directoryOpenButton);
+		directoryOpenButton.setButtonText("Open a directory...");
+		directoryOpenButton.onClick = [this] {openDirectory(); };
+		addAndMakeVisible(previousFileButton);
+		previousFileButton.setButtonText("Previous file");
+		previousFileButton.onClick = [this] {loadPreviousFile(); };
+		addAndMakeVisible(nextFileButton);
+		nextFileButton.setButtonText("Next file");
+		nextFileButton.onClick = [this] {loadNextFile(); };
+		addAndMakeVisible(currentFileNameLabel);
+		currentFileNameLabel.setText("No file loaded...", dontSendNotification);
+
+		currentFileIdx = new AudioParameterInt("currentFileIdx", "Loaded File", 0, 4096, 0);
+		currentZones = initializeZones();
+
 		// MIDI Display
 		addAndMakeVisible(midiMessagesBox);
 		midiMessagesBox.setMultiLine(true);
@@ -73,7 +96,7 @@ public:
 		midiMessagesBox.setColour(TextEditor::outlineColourId, Colour(0x1c000000));
 		midiMessagesBox.setColour(TextEditor::shadowColourId, Colour(0x16000000));
 
-		setSize(600, 400);
+		setSize(1000, 700);
 	}
 
 	~MainContentComponent()
@@ -92,6 +115,10 @@ public:
 
 		midiInputList.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
 		midiOutputList.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
+		directoryOpenButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
+		previousFileButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
+		nextFileButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
+		currentFileNameLabel.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
 		midiMessagesBox.setBounds(area.reduced(8));
 	}
 
@@ -155,8 +182,27 @@ private:
 	{
 		const ScopedValueSetter<bool> scopedInputFlag(isAddingFromMidiInput, true);
 		MidiMessage newMessage(message.getRawData(), message.getRawDataSize(), message.getTimeStamp());
+		if (message.isNoteOnOrOff()) {
+			// Find the zone
+			try {
+				int zoneIdx = findZone(message.getNoteNumber());
+				// Change the channel
+				newMessage.setChannel((int)currentZones[zoneIdx]["outChannel"]);
+				// Transpose
+				newMessage.setNoteNumber(message.getNoteNumber() + (int)currentZones[zoneIdx]["transpose"]);
+			}
+			catch (const std::out_of_range) {
+				// The message stays the same (no zone applied)
+			}
+			catch (nlohmann::detail::type_error) {
+				// The message stays the same (no file loaded)
+			}
+		} else {
+			// MIDI Thru
+		}
 		midiOutputDevice->sendMessageNow(newMessage);
 		postMessageToList(message, source->getName());
+		postMessageToList(newMessage, source->getName());
 	}
 
 	void handleNoteOn(MidiKeyboardState*, int midiChannel, int midiNoteNumber, float velocity) override
@@ -177,6 +223,62 @@ private:
 			m.setTimeStamp(Time::getMillisecondCounterHiRes() * 0.001);
 			postMessageToList(m, "On-Screen Keyboard");
 		}
+	}
+
+	void openDirectory() {
+		FileChooser fileChooser("Select the folder containing your setlist...",
+			File::getSpecialLocation(File::userDesktopDirectory));
+		if (fileChooser.browseForDirectory()) {
+			File folder = fileChooser.getResult();
+			DirectoryIterator iter(folder, false, "*.json", File::findFiles);
+			setlist.clear();
+			while (iter.next()) {
+				setlist.push_back(readFile(iter.getFile()));
+				setlistNames.push_back(iter.getFile().getFileName());
+			}
+			*currentFileIdx = 0;
+			currentZones = setlist[(int)*currentFileIdx];
+			currentFileNameLabel.setText(setlistNames[*currentFileIdx], dontSendNotification);
+		}
+	}
+
+	json readFile(const File & fileToRead) {
+		if (!fileToRead.existsAsFile()) return nullptr;
+		FileInputStream inputStream(fileToRead);
+		if (!inputStream.openedOk()) return nullptr;
+		return json::parse(inputStream.readEntireStreamAsString().toStdString())["zones"];
+	}
+
+	void loadPreviousFile() {
+		if ((int)*currentFileIdx <= 0) return;
+		*currentFileIdx = (int)*currentFileIdx - 1;
+		currentZones = setlist[(int)*currentFileIdx];
+		currentFileNameLabel.setText(setlistNames[*currentFileIdx], dontSendNotification);
+	}
+
+	void loadNextFile() {
+		if ((int)*currentFileIdx >= setlist.size() - 1) return;
+		*currentFileIdx = (int)*currentFileIdx + 1;
+		currentZones = setlist[(int)*currentFileIdx];
+		currentFileNameLabel.setText(setlistNames[*currentFileIdx], dontSendNotification);
+	}
+
+	json initializeZones() {
+		json ret = {
+			{"startNote", MIN_NOTE_NUMBER},
+			{"endNote", MAX_NOTE_NUMBER},
+			{"outChannel", DEFAULT_OUT_CHANNEL},
+			{"transpose", 0}
+		};
+		return ret;
+	}
+
+	int findZone(int noteNumber) {
+		for (int zoneIdx = 0; zoneIdx < currentZones.size(); ++zoneIdx) {
+			if (((int)(currentZones[zoneIdx]["startNote"]) <= noteNumber) && (noteNumber <= (int)(currentZones[zoneIdx]["endNote"])))
+				return zoneIdx;
+		}
+		throw new std::out_of_range("This note was outside any zone\n");
 	}
 
 	// This is used to dispach an incoming message to the message thread
@@ -218,7 +320,8 @@ private:
 			seconds,
 			millis);
 
-		auto description = getMidiMessageDescription(message);
+		// auto description = getMidiMessageDescription(message);
+		auto description = message.getDescription();
 
 		String midiMessageString(timecode + "  -  " + description + " (" + source + ")");
 		logMessage(midiMessageString);
@@ -242,6 +345,18 @@ private:
 	// MIDI Display
 	TextEditor midiMessagesBox;
 	double startTime;
+
+	// Zone File Management
+	TextButton directoryOpenButton;
+	TextButton previousFileButton;
+	TextButton nextFileButton;
+	Label currentFileNameLabel;
+
+	// Zones Management
+	json currentZones;
+	std::vector<json> setlist;
+	std::vector<String> setlistNames;
+	AudioParameterInt* currentFileIdx;
 
 	//==============================================================================
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainContentComponent);
