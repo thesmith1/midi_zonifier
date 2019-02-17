@@ -81,6 +81,12 @@ public:
 		midiMessagesBox.setColour(TextEditor::outlineColourId, Colour(0x1c000000));
 		midiMessagesBox.setColour(TextEditor::shadowColourId, Colour(0x16000000));
 
+		// CC Management
+		addAndMakeVisible(ccMappingFileOpenButton);
+		ccMappingFileOpenButton.setButtonText("Open a CC mapping file...");
+		ccMappingFileOpenButton.onClick = [this] {openCCMappingFile(); };
+		keyboardName.attachToComponent(&ccMappingFileOpenButton, true);
+
 		setSize(1000, 700);
 	}
 
@@ -109,35 +115,11 @@ public:
 		previousFileButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
 		nextFileButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
 		currentFileNameLabel.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
+		ccMappingFileOpenButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
 		midiMessagesBox.setBounds(area.reduced(8));
 	}
 
 private:
-	static String getMidiMessageDescription(const MidiMessage& m)
-	{
-		if (m.isNoteOn())           return "Note on " + MidiMessage::getMidiNoteName(m.getNoteNumber(), true, true, 3);
-		if (m.isNoteOff())          return "Note off " + MidiMessage::getMidiNoteName(m.getNoteNumber(), true, true, 3);
-		if (m.isProgramChange())    return "Program change " + String(m.getProgramChangeNumber());
-		if (m.isPitchWheel())       return "Pitch wheel " + String(m.getPitchWheelValue());
-		if (m.isAftertouch())       return "After touch " + MidiMessage::getMidiNoteName(m.getNoteNumber(), true, true, 3) + ": " + String(m.getAfterTouchValue());
-		if (m.isChannelPressure())  return "Channel pressure " + String(m.getChannelPressureValue());
-		if (m.isAllNotesOff())      return "All notes off";
-		if (m.isAllSoundOff())      return "All sound off";
-		if (m.isMetaEvent())        return "Meta event";
-
-		if (m.isController())
-		{
-			String name(MidiMessage::getControllerName(m.getControllerNumber()));
-
-			if (name.isEmpty())
-				name = "[" + String(m.getControllerNumber()) + "]";
-
-			return "Controller " + name + ": " + String(m.getControllerValue());
-		}
-
-		return String::toHexString(m.getRawData(), m.getRawDataSize());
-	}
-
 	void logMessage(const String& m)
 	{
 		midiMessagesBox.moveCaretToEnd();
@@ -194,6 +176,14 @@ private:
 			int programChangeNumber = message.getProgramChangeNumber();
 			if (programChangeNumber == 0) loadPreviousFile();
 			if (programChangeNumber == 1) loadNextFile();
+		}
+		else if (message.isController()) {
+			// Convert the CC
+			if (ccMapping.find(message.getControllerNumber()) != ccMapping.end()) {
+				newMessage = MidiMessage::controllerEvent(ccMappingChannels[message.getControllerNumber()], ccMapping[message.getControllerNumber()], message.getControllerValue());
+			}
+			midiOutputDevice->sendMessageNow(newMessage);
+			postMessageToList(newMessage, source->getName());
 		} else {
 			// MIDI Thru
 			midiOutputDevice->sendMessageNow(newMessage);
@@ -224,6 +214,35 @@ private:
 		FileInputStream inputStream(fileToRead);
 		if (!inputStream.openedOk()) return nullptr;
 		return json::parse(inputStream.readEntireStreamAsString().toStdString())["zones"];
+	}
+
+	void openCCMappingFile() {
+		FileChooser fileChooser("Select the file containing the CC mapping...",
+			File::getSpecialLocation(File::userDesktopDirectory),
+			"*.json");
+		if (fileChooser.browseForFileToOpen()) {
+			File ccMappingFile(fileChooser.getResult());
+			json newMapping = readCCMappingFile(ccMappingFile);
+			loadCCMapping(newMapping);
+		}
+	}
+
+	json readCCMappingFile(File & fileToRead) {
+		if (!fileToRead.existsAsFile()) return nullptr;
+		FileInputStream inputStream(fileToRead);
+		if (!inputStream.openedOk()) return nullptr;
+		return json::parse(inputStream.readEntireStreamAsString().toStdString());
+	}
+
+	void loadCCMapping(json newMapping) {
+		ccMapping.clear();
+		ccMappingChannels.clear();
+		keyboardName.setText(newMapping["keyboardName"].get<std::string>(), dontSendNotification);
+		auto mapping = newMapping["ccMapping"];
+		for (auto entry : mapping) {
+			ccMapping[entry["CConKey"]] = entry["CConVST"];
+			ccMappingChannels[entry["CConKey"]] = entry["outChannel"];
+		}
 	}
 
 	void loadPreviousFile() {
@@ -330,6 +349,12 @@ private:
 	std::vector<json> setlist;
 	std::vector<String> setlistNames;
 	int currentFileIdx;
+
+	// CC Management
+	std::map<int, int> ccMapping;
+	std::map<int, int> ccMappingChannels;
+	Label keyboardName;
+	TextButton ccMappingFileOpenButton;
 
 	//==============================================================================
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainContentComponent);
