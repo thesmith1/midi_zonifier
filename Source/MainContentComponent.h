@@ -49,7 +49,6 @@ public:
 				break;
 			}
 		}
-
 		// if no enabled devices were found just use the first one in the list
 		if (midiOutputList.getSelectedId() == 0)
 			setMidiOutput(0);
@@ -87,7 +86,9 @@ public:
 
 	~MainContentComponent()
 	{
-		deviceManager.removeMidiInputCallback(MidiInput::getDevices()[midiInputList.getSelectedItemIndex()], this);
+		for (auto button : midiInputButtons) {
+			if (button->getToggleState()) removeMidiInput(button->getButtonText());
+		}
 	}
 
 	void paint(Graphics& g) override
@@ -158,24 +159,7 @@ private:
 	void removeMidiInput(String name) {
 		deviceManager.removeMidiInputCallback(name, this);
 	}
-
-	void setMidiInput(int index)
-	{
-		auto list = MidiInput::getDevices();
-
-		deviceManager.removeMidiInputCallback(list[lastInputIndex], this);
-
-		auto newInput = list[index];
-
-		if (!deviceManager.isMidiInputEnabled(newInput))
-			deviceManager.setMidiInputEnabled(newInput, true);
-
-		deviceManager.addMidiInputCallback(newInput, this);
-		midiInputList.setSelectedId(index + 1, dontSendNotification);
-
-		lastInputIndex = index;
-	}
-
+	
 	bool setMidiOutput(int index) {
 		midiOutputDevice.reset(MidiOutput::openDevice(index));
 		midiOutputList.setSelectedId(index + 1, dontSendNotification);
@@ -185,7 +169,6 @@ private:
 
 	void handleIncomingMidiMessage(MidiInput* source, const MidiMessage& message) override
 	{
-		const ScopedValueSetter<bool> scopedInputFlag(isAddingFromMidiInput, true);
 		MidiMessage newMessage(message.getRawData(), message.getRawDataSize(), message.getTimeStamp());
 		if (message.isNoteOnOrOff()) {
 			// Find the zone
