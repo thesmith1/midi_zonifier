@@ -200,11 +200,14 @@ private:
 			DirectoryIterator iter(folder, false, "*.json", File::findFiles);
 			setlist.clear();
 			while (iter.next()) {
-				setlist.push_back(readFile(iter.getFile()));
+				json file_content = readFile(iter.getFile());
+				setlist.push_back(file_content["zones"]);
+				programChangesList.push_back(file_content["programChanges"]);
 				setlistNames.push_back(iter.getFile().getFileName());
 			}
 			currentFileIdx = 0;
 			currentZones = setlist[currentFileIdx];
+			sendProgramChanges();
 			currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
 		}
 	}
@@ -213,7 +216,7 @@ private:
 		if (!fileToRead.existsAsFile()) return nullptr;
 		FileInputStream inputStream(fileToRead);
 		if (!inputStream.openedOk()) return nullptr;
-		return json::parse(inputStream.readEntireStreamAsString().toStdString())["zones"];
+		return json::parse(inputStream.readEntireStreamAsString().toStdString());
 	}
 
 	void openCCMappingFile() {
@@ -249,6 +252,7 @@ private:
 		if (currentFileIdx <= 0) return;
 		currentFileIdx = currentFileIdx - 1;
 		currentZones = setlist[currentFileIdx];
+		sendProgramChanges();
 		currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
 	}
 
@@ -256,7 +260,16 @@ private:
 		if (currentFileIdx >= setlist.size() - 1) return;
 		currentFileIdx = currentFileIdx + 1;
 		currentZones = setlist[currentFileIdx];
+		sendProgramChanges();
 		currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
+	}
+
+	void sendProgramChanges() {
+		json currentPC = programChangesList[currentFileIdx];
+		for (auto pc : currentPC) {
+			MidiMessage newMessage = MidiMessage::programChange(pc["outChannel"], pc["programChangeNumber"]);
+			midiOutputDevice->sendMessageNow(newMessage);
+		}
 	}
 
 	json initializeZones() {
@@ -348,6 +361,7 @@ private:
 	json currentZones;
 	std::vector<json> setlist;
 	std::vector<String> setlistNames;
+	std::vector<json> programChangesList;
 	int currentFileIdx;
 
 	// CC Management
