@@ -3,11 +3,19 @@
 #include <Windows.h>
 #include "../ExternalLib/json.hpp"
 
-#define DEBUG 1
+#define DEBUG 0
 
 #define MIN_NOTE_NUMBER 0
 #define MAX_NOTE_NUMBER 127
 #define DEFAULT_OUT_CHANNEL 1
+#define ORCHESTRA_LOW_CHANNEL 1
+#define ORCHESTRA_MID_CHANNEL 2
+#define ORCHESTRA_HIGH_CHANNEL 3
+#define ORCHESTRA_STACCATO_NOTE 12
+#define ORCHESTRA_PIZZICATO_NOTE 13
+#define ORCHESTRA_SUSTAIN_NOTE 14
+#define B3_LESLIE_CC 82
+#define B3_CHANNEL 4
 
 using json = nlohmann::json;
 
@@ -176,6 +184,8 @@ private:
 			int programChangeNumber = message.getProgramChangeNumber();
 			if (programChangeNumber == 0) loadPreviousFile();
 			if (programChangeNumber == 1) loadNextFile();
+			if (programChangeNumber == 4 || programChangeNumber == 5 || programChangeNumber == 6) changeOrchestraArticulation(programChangeNumber);
+			if (programChangeNumber == 7) toggleLeslieState();
 		}
 		else if (message.isController()) {
 			// Convert the CC
@@ -270,6 +280,37 @@ private:
 			MidiMessage newMessage = MidiMessage::programChange(pc["outChannel"], pc["programChangeNumber"]);
 			midiOutputDevice->sendMessageNow(newMessage);
 		}
+	}
+
+	void changeOrchestraArticulation(int programChangeNumber) {
+		int noteNumber;
+		if (programChangeNumber == 4) {
+			noteNumber = ORCHESTRA_SUSTAIN_NOTE;
+		}
+		else if (programChangeNumber == 5) {
+			noteNumber = ORCHESTRA_STACCATO_NOTE;
+		}
+		else {
+			noteNumber = ORCHESTRA_PIZZICATO_NOTE;
+		}
+		auto newMessage = MidiMessage::noteOn(ORCHESTRA_LOW_CHANNEL, noteNumber, (uint8)127);
+		midiOutputDevice->sendMessageNow(newMessage);
+		newMessage = MidiMessage::noteOff(ORCHESTRA_LOW_CHANNEL, noteNumber);
+		midiOutputDevice->sendMessageNow(newMessage);
+		newMessage = MidiMessage::noteOn(ORCHESTRA_MID_CHANNEL, noteNumber, (uint8)127);
+		midiOutputDevice->sendMessageNow(newMessage);
+		newMessage = MidiMessage::noteOff(ORCHESTRA_MID_CHANNEL, noteNumber);
+		midiOutputDevice->sendMessageNow(newMessage);
+		newMessage = MidiMessage::noteOn(ORCHESTRA_HIGH_CHANNEL, noteNumber, (uint8)127);
+		midiOutputDevice->sendMessageNow(newMessage);
+		newMessage = MidiMessage::noteOff(ORCHESTRA_HIGH_CHANNEL, noteNumber);
+		midiOutputDevice->sendMessageNow(newMessage);
+	}
+
+	void toggleLeslieState() {
+		auto newMessage = MidiMessage::controllerEvent(B3_CHANNEL, B3_LESLIE_CC, 127*leslieState);
+		midiOutputDevice->sendMessageNow(newMessage);
+		leslieState = !leslieState;
 	}
 
 	json initializeZones() {
@@ -369,6 +410,9 @@ private:
 	std::map<int, int> ccMappingChannels;
 	Label keyboardName;
 	TextButton ccMappingFileOpenButton;
+
+	// B3 Leslie Management
+	bool leslieState = false;
 
 	//==============================================================================
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainContentComponent);
