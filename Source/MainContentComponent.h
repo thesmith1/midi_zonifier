@@ -163,20 +163,24 @@ private:
 		if (message.isNoteOnOrOff()) {
 			// Find the zone
 			try {
-				int zoneIdx = findZone(message.getNoteNumber());
-				// Change the channel
-				newMessage.setChannel((int)currentZones[zoneIdx]["outChannel"]);
-				// Transpose
-				newMessage.setNoteNumber(message.getNoteNumber() + (int)currentZones[zoneIdx]["transpose"]);
+				// int zoneIdx = findZone(message.getNoteNumber());
+				std::vector<int> zoneIndices = findZones(message.getNoteNumber());
+				for (int index : zoneIndices) {
+					// Change the channel
+					newMessage.setChannel((int)currentZones[index]["outChannel"]);
+					// Transpose
+					newMessage.setNoteNumber(message.getNoteNumber() + (int)currentZones[index]["transpose"]);
+					// Send message
+					midiOutputDevice->sendMessageNow(newMessage);
+					postMessageToList(newMessage, source->getName());
+				}
 			}
 			catch (const std::out_of_range) {
-				// The message stays the same (no zone applied)
+				// No output (no zone applied)
 			}
 			catch (nlohmann::detail::type_error) {
-				// The message stays the same (no file loaded)
+				// No output (no file loaded)
 			}
-			midiOutputDevice->sendMessageNow(newMessage);
-			postMessageToList(newMessage, source->getName());
 		}
 		else if (message.isProgramChange()) {
 			const MessageManagerLock mmLock;
@@ -329,6 +333,16 @@ private:
 				return zoneIdx;
 		}
 		throw new std::out_of_range("This note was outside any zone\n");
+	}
+
+	std::vector<int> findZones(int noteNumber) {
+		std::vector<int> ret;
+		for (int zoneIdx = 0; zoneIdx < currentZones.size(); ++zoneIdx) {
+			if (((int)(currentZones[zoneIdx]["startNote"]) <= noteNumber) && (noteNumber <= (int)(currentZones[zoneIdx]["endNote"]))) {
+				ret.push_back(zoneIdx);
+			}
+		}
+		return ret;
 	}
 
 	// This is used to dispach an incoming message to the message thread
