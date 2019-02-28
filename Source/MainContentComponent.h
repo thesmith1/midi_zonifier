@@ -6,6 +6,7 @@
 #define DEBUG 0
 
 #define MAX_NUMBER_MESSAGES 1000
+#define NUM_MIDI_CHANNELS 16
 
 #define MIN_NOTE_NUMBER 0
 #define MAX_NOTE_NUMBER 127
@@ -77,7 +78,9 @@ public:
 		currentFileNameLabel.setText("No file loaded...", dontSendNotification);
 
 		currentFileIdx = 0;
-		currentZones = initializeZones();
+		for (uint8_t channel = 0; channel < NUM_MIDI_CHANNELS; ++channel) {
+			currentZones[channel] = initializeZones();
+		}
 
 		// MIDI Display
 		addAndMakeVisible(midiMessagesBox);
@@ -170,13 +173,12 @@ private:
 		if (message.isNoteOnOrOff()) {
 			// Find the zone
 			try {
-				// int zoneIdx = findZone(message.getNoteNumber());
-				std::vector<int> zoneIndices = findZones(message.getNoteNumber());
+				std::vector<int> zoneIndices = findZones(message.getChannel(), message.getNoteNumber());
 				for (int index : zoneIndices) {
 					// Change the channel
-					newMessage.setChannel((int)currentZones[index]["outChannel"]);
+					newMessage.setChannel((int)currentZones[message.getChannel()][index]["outChannel"]);
 					// Transpose
-					newMessage.setNoteNumber(message.getNoteNumber() + (int)currentZones[index]["transpose"]);
+					newMessage.setNoteNumber(message.getNoteNumber() + (int)currentZones[message.getChannel()][index]["transpose"]);
 					// Send message
 					midiOutputDevice->sendMessageNow(newMessage);
 					postMessageToList(newMessage, source->getName());
@@ -222,7 +224,7 @@ private:
 			setlist.clear();
 			while (iter.next()) {
 				json file_content = readFile(iter.getFile());
-				setlist.push_back(file_content["zones"]);
+				addToSetlist(file_content["zones"]);
 				programChangesList.push_back(file_content["programChanges"]);
 				setlistNames.push_back(iter.getFile().getFileName());
 			}
@@ -231,6 +233,16 @@ private:
 			sendProgramChanges();
 			currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
 		}
+	}
+
+	void addToSetlist(json fileContent) {
+		std::map<uint8_t, json> newZones;
+		for (auto input : fileContent) {
+			int inChannel = (int)input["inChannel"];
+			json zones = input["zones"];
+			newZones[inChannel] = zones;
+		}
+		setlist.push_back(newZones);
 	}
 
 	json readFile(const File & fileToRead) {
@@ -334,18 +346,10 @@ private:
 		return ret;
 	}
 
-	int findZone(int noteNumber) {
-		for (int zoneIdx = 0; zoneIdx < currentZones.size(); ++zoneIdx) {
-			if (((int)(currentZones[zoneIdx]["startNote"]) <= noteNumber) && (noteNumber <= (int)(currentZones[zoneIdx]["endNote"])))
-				return zoneIdx;
-		}
-		throw new std::out_of_range("This note was outside any zone\n");
-	}
-
-	std::vector<int> findZones(int noteNumber) {
+	std::vector<int> findZones(int inChannel, int noteNumber) {
 		std::vector<int> ret;
-		for (int zoneIdx = 0; zoneIdx < currentZones.size(); ++zoneIdx) {
-			if (((int)(currentZones[zoneIdx]["startNote"]) <= noteNumber) && (noteNumber <= (int)(currentZones[zoneIdx]["endNote"]))) {
+		for (int zoneIdx = 0; zoneIdx < currentZones[inChannel].size(); ++zoneIdx) {
+			if (((int)(currentZones[inChannel][zoneIdx]["startNote"]) <= noteNumber) && (noteNumber <= (int)(currentZones[inChannel][zoneIdx]["endNote"]))) {
 				ret.push_back(zoneIdx);
 			}
 		}
@@ -427,8 +431,8 @@ private:
 	Label currentFileNameLabel;
 
 	// Zones Management
-	json currentZones;
-	std::vector<json> setlist;
+	std::map<uint8_t, json> currentZones;
+	std::vector<std::map<uint8_t, json>> setlist;
 	std::vector<String> setlistNames;
 	std::vector<json> programChangesList;
 	int currentFileIdx;
