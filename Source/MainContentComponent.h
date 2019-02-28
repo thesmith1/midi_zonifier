@@ -5,6 +5,8 @@
 
 #define DEBUG 0
 
+#define MAX_NUMBER_MESSAGES 1000
+
 #define MIN_NOTE_NUMBER 0
 #define MAX_NOTE_NUMBER 127
 #define DEFAULT_OUT_CHANNEL 1
@@ -130,6 +132,11 @@ public:
 private:
 	void logMessage(const String& m)
 	{
+		if (numberDisplayedMessages >= MAX_NUMBER_MESSAGES) {
+			midiMessagesBox.clear();
+			numberDisplayedMessages = 0;
+		}
+		numberDisplayedMessages++;
 		midiMessagesBox.moveCaretToEnd();
 		midiMessagesBox.insertTextAtCaret(m + newLine);
 	}
@@ -371,20 +378,26 @@ private:
 
 	void addMessageToList(const MidiMessage& message, const String& source)
 	{
-		auto time = message.getTimeStamp() - startTime;
-
-		auto hours = ((int)(time / 3600.0)) % 24;
-		auto minutes = ((int)(time / 60.0)) % 60;
-		auto seconds = ((int)time) % 60;
-		auto millis = ((int)(time * 1000.0)) % 1000;
-
-		auto timecode = String::formatted("%02d:%02d:%02d.%03d",
-			hours,
-			minutes,
-			seconds,
-			millis);
-
-		String midiMessageString(timecode + "  -  " + message.getDescription() + " (" + source + ")");
+		String description;
+		if (message.isNoteOnOrOff()) {
+			std::stringstream ss;
+			ss << "Note " << message.getNoteNumber() << " (" << message.getMidiNoteName(message.getNoteNumber(), true, true, 4) << ") Velocity " << (int)message.getVelocity() << " Channel " << message.getChannel();
+			description = ss.str();
+		}
+		else if (message.isController()) {
+			std::stringstream ss;
+			ss << "CC" << message.getControllerNumber() << ": " << message.getControllerValue() << " Channel " << message.getChannel();
+			description = ss.str();
+		}
+		else if (message.isProgramChange()) {
+			std::stringstream ss;
+			ss << "ProgramChange: " << message.getProgramChangeNumber() << " Channel " << message.getChannel();
+			description = ss.str();
+		}
+		else {
+			description = message.getDescription();
+		}
+		String midiMessageString(source + ": " + description);
 		logMessage(midiMessageString);
 	}
 
@@ -404,6 +417,7 @@ private:
 
 	// MIDI Display
 	TextEditor midiMessagesBox;
+	uint16_t numberDisplayedMessages = 0;
 	double startTime;
 
 	// Zone File Management
