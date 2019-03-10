@@ -2,10 +2,11 @@
 #include "../JuceLibraryCode/JuceHeader.h"
 #include <Windows.h>
 #include "../ExternalLib/json.hpp"
+#include "MonitorComponent.h"
+#include "IOComponent.h"
+#include "FilesComponent.h"
+#include "BinaryData.h"
 
-#define DEBUG 0
-
-#define MAX_NUMBER_MESSAGES 1000
 #define NUM_MIDI_CHANNELS 16
 
 #define MIN_NOTE_NUMBER 0
@@ -20,94 +21,46 @@
 #define B3_LESLIE_CC 82
 #define B3_CHANNEL 4
 
+// GUI Constants
+#define EXT_MARGIN 5
+#define INT_MARGIN 3
+
 using json = nlohmann::json;
 
 //==============================================================================
 class MainContentComponent : public Component,
-	private MidiInputCallback
+	private MidiInputCallback, ActionListener
 {
 public:
 	MainContentComponent()
-		: startTime(Time::getMillisecondCounterHiRes() * 0.001)
 	{
 		setOpaque(true);
-		
-		// MIDI In
-		addAndMakeVisible(midiInputsLabel);
-		midiInputsLabel.setText("Active MIDI Inputs:", dontSendNotification);
-		midiInputsNames = MidiInput::getDevices();
-		midiInputButtons = OwnedArray<ToggleButton>();
-		for (auto in : midiInputsNames) {
-			auto newButton = new ToggleButton(in);
-			addAndMakeVisible(newButton);
-			midiInputButtons.add(newButton);
-			newButton->onClick = [this, newButton] { updateToggleState(newButton); };
-		}
-		
-		// MIDI Out
-		addAndMakeVisible(midiOutputListLabel);
-		midiOutputListLabel.setText("MIDI Output:", dontSendNotification);
-		midiOutputListLabel.attachToComponent(&midiOutputList, true);
 
-		addAndMakeVisible(midiOutputList);
-		midiOutputList.setTextWhenNoChoicesAvailable("No MIDI Outputs Enabled");
-		auto midiOutputs = MidiOutput::getDevices();
-		midiOutputList.addItemList(midiOutputs, 1);
-		midiOutputList.onChange = [this] { setMidiOutput(midiOutputList.getSelectedItemIndex()); };
+		// Set up device manager to pass to IO --> there should be a better way
+		deviceManager = new AudioDeviceManager();
 
-		for (auto midiOutput : midiOutputs) {
-			if (setMidiOutput(midiOutputs.indexOf(midiOutput)) != NULL) {
-				break;
-			}
-		}
-		// if no enabled devices were found just use the first one in the list
-		if (midiOutputList.getSelectedId() == 0)
-			setMidiOutput(0);
+		// MIDI IO
+		io.setDeviceManager(deviceManager);
+		addAndMakeVisible(io);
+		io.addListener(this);
 
 		// MIDI Zones Management
-		addAndMakeVisible(directoryOpenButton);
-		directoryOpenButton.setButtonText("Open a directory...");
-		directoryOpenButton.onClick = [this] {openDirectory(); };
-		addAndMakeVisible(previousFileButton);
-		previousFileButton.setButtonText("Previous file");
-		previousFileButton.onClick = [this] {loadPreviousFile(); };
-		addAndMakeVisible(nextFileButton);
-		nextFileButton.setButtonText("Next file");
-		nextFileButton.onClick = [this] {loadNextFile(); };
-		addAndMakeVisible(currentFileNameLabel);
-		currentFileNameLabel.setText("No file loaded...", dontSendNotification);
-
+		addAndMakeVisible(files);
+		files.addListener(this);
 		currentFileIdx = 0;
 		for (uint8_t channel = 0; channel < NUM_MIDI_CHANNELS; ++channel) {
 			currentZones[channel] = initializeZones();
 		}
 
 		// MIDI Display
-		addAndMakeVisible(midiMessagesBox);
-		midiMessagesBox.setMultiLine(true);
-		midiMessagesBox.setReturnKeyStartsNewLine(true);
-		midiMessagesBox.setReadOnly(true);
-		midiMessagesBox.setScrollbarsShown(true);
-		midiMessagesBox.setCaretVisible(false);
-		midiMessagesBox.setPopupMenuEnabled(true);
-		midiMessagesBox.setColour(TextEditor::backgroundColourId, Colour(0x32ffffff));
-		midiMessagesBox.setColour(TextEditor::outlineColourId, Colour(0x1c000000));
-		midiMessagesBox.setColour(TextEditor::shadowColourId, Colour(0x16000000));
-
-		// CC Management
-		addAndMakeVisible(ccMappingFileOpenButton);
-		ccMappingFileOpenButton.setButtonText("Open a CC mapping file...");
-		ccMappingFileOpenButton.onClick = [this] {openCCMappingFile(); };
-		keyboardName.attachToComponent(&ccMappingFileOpenButton, true);
-
+		addAndMakeVisible(monitor);
+		
 		setSize(1000, 700);
 	}
 
 	~MainContentComponent()
 	{
-		for (auto button : midiInputButtons) {
-			if (button->getToggleState()) removeMidiInput(button->getButtonText());
-		}
+		delete deviceManager;
 	}
 
 	void paint(Graphics& g) override
@@ -117,54 +70,44 @@ public:
 
 	void resized() override
 	{
-		auto area = getLocalBounds();
-
-		midiInputsLabel.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
-		for (auto button : midiInputButtons) {
-			button->setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
-		}
-		midiOutputList.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
-		directoryOpenButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
-		previousFileButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
-		nextFileButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
-		currentFileNameLabel.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
-		ccMappingFileOpenButton.setBounds(area.removeFromTop(36).removeFromRight(getWidth() - 150).reduced(8));
-		midiMessagesBox.setBounds(area.reduced(8));
+		io.setBounds(EXT_MARGIN, EXT_MARGIN, getWidth() / 2 - INT_MARGIN *2, getHeight() / 2 - INT_MARGIN *2);
+		files.setBounds(getWidth() / 2 + INT_MARGIN, EXT_MARGIN, getWidth() / 2 - INT_MARGIN - EXT_MARGIN, getHeight() / 2 - INT_MARGIN * 2);
+		monitor.setBounds(EXT_MARGIN, getHeight() / 2 + INT_MARGIN, getWidth() - EXT_MARGIN * 2, getHeight() / 2 - INT_MARGIN - EXT_MARGIN);
 	}
 
 private:
-	void logMessage(const String& m)
+	void actionListenerCallback(const String& message) override
 	{
-		if (numberDisplayedMessages >= MAX_NUMBER_MESSAGES) {
-			midiMessagesBox.clear();
-			numberDisplayedMessages = 0;
+		if (message[0] == 'A') {
+			deviceManager->addMidiInputCallback(message.substring(1, message.length()), this);
 		}
-		numberDisplayedMessages++;
-		midiMessagesBox.moveCaretToEnd();
-		midiMessagesBox.insertTextAtCaret(m + newLine);
-	}
-
-	void updateToggleState(ToggleButton* button) {
-		auto state = button->getToggleState();
-		if (state) addMidiInput(button->getButtonText());
-		else removeMidiInput(button->getButtonText());
-	}
-
-	void addMidiInput(String name) {
-		if (!deviceManager.isMidiInputEnabled(name))
-			deviceManager.setMidiInputEnabled(name, true);
-		deviceManager.addMidiInputCallback(name, this);
-	}
-
-	void removeMidiInput(String name) {
-		deviceManager.removeMidiInputCallback(name, this);
-	}
-	
-	bool setMidiOutput(int index) {
-		midiOutputDevice.reset(MidiOutput::openDevice(index));
-		midiOutputList.setSelectedId(index + 1, dontSendNotification);
-		lastOutputIndex = index;
-		return midiOutputDevice != nullptr;
+		else if (message[0] == 'D') {
+			deviceManager->removeMidiInputCallback(message.substring(1, message.length()), this);
+		}
+		else if (message.compare("openDirectory") == 0) {
+			setlist.clear();
+			currentFileIdx = 0;
+			programChangesList = files.getProgramChangesList();
+			setlist = files.getSetlist();
+			currentZones = setlist[currentFileIdx];
+			sendProgramChanges();
+		}
+		else if (message.compare("loadCCMapping") == 0) {
+			ccMapping.clear();
+			ccMappingChannels.clear();
+			ccMapping = files.getCCMapping();
+			ccMappingChannels = files.getCCMappingChannels();
+		}
+		else if (message.compare("loadPreviousFile") == 0) {
+			this->currentFileIdx = files.getCurrentFileIdx();
+			this->currentZones = setlist[currentFileIdx];
+			sendProgramChanges();
+		}
+		else if (message.compare("loadNextFile") == 0) {
+			this->currentFileIdx = files.getCurrentFileIdx();
+			this->currentZones = setlist[currentFileIdx];
+			sendProgramChanges();
+		}
 	}
 
 	void handleIncomingMidiMessage(MidiInput* source, const MidiMessage& message) override
@@ -180,7 +123,7 @@ private:
 					// Transpose
 					newMessage.setNoteNumber(message.getNoteNumber() + (int)currentZones[message.getChannel()][index]["transpose"]);
 					// Send message
-					midiOutputDevice->sendMessageNow(newMessage);
+					io.sendMIDIMessage(newMessage);
 					postMessageToList(newMessage, source->getName());
 				}
 			}
@@ -195,8 +138,8 @@ private:
 			const MessageManagerLock mmLock;
 			// Change current file
 			int programChangeNumber = message.getProgramChangeNumber();
-			if (programChangeNumber == 0) loadPreviousFile();
-			if (programChangeNumber == 1) loadNextFile();
+			if (programChangeNumber == 0) files.loadPreviousFile();
+			if (programChangeNumber == 1) files.loadNextFile();
 			if (programChangeNumber == 4 || programChangeNumber == 5 || programChangeNumber == 6) changeOrchestraArticulation(programChangeNumber);
 			if (programChangeNumber == 7) toggleLeslieState();
 		}
@@ -205,103 +148,21 @@ private:
 			if (ccMapping.find(message.getControllerNumber()) != ccMapping.end()) {
 				newMessage = MidiMessage::controllerEvent(ccMappingChannels[message.getControllerNumber()], ccMapping[message.getControllerNumber()], message.getControllerValue());
 			}
-			midiOutputDevice->sendMessageNow(newMessage);
+			io.sendMIDIMessage(newMessage);
 			postMessageToList(newMessage, source->getName());
 		} else {
 			// MIDI Thru
-			midiOutputDevice->sendMessageNow(newMessage);
+			io.sendMIDIMessage(newMessage);
 			postMessageToList(newMessage, source->getName());
 		}
 		postMessageToList(message, source->getName());
 	}
 	
-	void openDirectory() {
-		FileChooser fileChooser("Select the folder containing your setlist...",
-			File::getSpecialLocation(File::userDesktopDirectory));
-		if (fileChooser.browseForDirectory()) {
-			File folder = fileChooser.getResult();
-			DirectoryIterator iter(folder, false, "*.json", File::findFiles);
-			setlist.clear();
-			while (iter.next()) {
-				json file_content = readFile(iter.getFile());
-				addToSetlist(file_content["zones"]);
-				programChangesList.push_back(file_content["programChanges"]);
-				setlistNames.push_back(iter.getFile().getFileName());
-			}
-			currentFileIdx = 0;
-			currentZones = setlist[currentFileIdx];
-			sendProgramChanges();
-			currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
-		}
-	}
-
-	void addToSetlist(json fileContent) {
-		std::map<uint8_t, json> newZones;
-		for (auto input : fileContent) {
-			int inChannel = (int)input["inChannel"];
-			json zones = input["zones"];
-			newZones[inChannel] = zones;
-		}
-		setlist.push_back(newZones);
-	}
-
-	json readFile(const File & fileToRead) {
-		if (!fileToRead.existsAsFile()) return nullptr;
-		FileInputStream inputStream(fileToRead);
-		if (!inputStream.openedOk()) return nullptr;
-		return json::parse(inputStream.readEntireStreamAsString().toStdString());
-	}
-
-	void openCCMappingFile() {
-		FileChooser fileChooser("Select the file containing the CC mapping...",
-			File::getSpecialLocation(File::userDesktopDirectory),
-			"*.json");
-		if (fileChooser.browseForFileToOpen()) {
-			File ccMappingFile(fileChooser.getResult());
-			json newMapping = readCCMappingFile(ccMappingFile);
-			loadCCMapping(newMapping);
-		}
-	}
-
-	json readCCMappingFile(File & fileToRead) {
-		if (!fileToRead.existsAsFile()) return nullptr;
-		FileInputStream inputStream(fileToRead);
-		if (!inputStream.openedOk()) return nullptr;
-		return json::parse(inputStream.readEntireStreamAsString().toStdString());
-	}
-
-	void loadCCMapping(json newMapping) {
-		ccMapping.clear();
-		ccMappingChannels.clear();
-		keyboardName.setText(newMapping["keyboardName"].get<std::string>(), dontSendNotification);
-		auto mapping = newMapping["ccMapping"];
-		for (auto entry : mapping) {
-			ccMapping[entry["CConKey"]] = entry["CConVST"];
-			ccMappingChannels[entry["CConKey"]] = entry["outChannel"];
-		}
-	}
-
-	void loadPreviousFile() {
-		if (currentFileIdx <= 0) return;
-		currentFileIdx = currentFileIdx - 1;
-		currentZones = setlist[currentFileIdx];
-		sendProgramChanges();
-		currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
-	}
-
-	void loadNextFile() {
-		if (currentFileIdx >= setlist.size() - 1) return;
-		currentFileIdx = currentFileIdx + 1;
-		currentZones = setlist[currentFileIdx];
-		sendProgramChanges();
-		currentFileNameLabel.setText(setlistNames[currentFileIdx], dontSendNotification);
-	}
-
 	void sendProgramChanges() {
 		json currentPC = programChangesList[currentFileIdx];
 		for (auto pc : currentPC) {
 			MidiMessage newMessage = MidiMessage::programChange(pc["outChannel"], pc["programChangeNumber"]);
-			midiOutputDevice->sendMessageNow(newMessage);
+			io.sendMIDIMessage(newMessage);
 		}
 	}
 
@@ -317,22 +178,22 @@ private:
 			noteNumber = ORCHESTRA_PIZZICATO_NOTE;
 		}
 		auto newMessage = MidiMessage::noteOn(ORCHESTRA_LOW_CHANNEL, noteNumber, (uint8)127);
-		midiOutputDevice->sendMessageNow(newMessage);
+		io.sendMIDIMessage(newMessage);
 		newMessage = MidiMessage::noteOff(ORCHESTRA_LOW_CHANNEL, noteNumber);
-		midiOutputDevice->sendMessageNow(newMessage);
+		io.sendMIDIMessage(newMessage);
 		newMessage = MidiMessage::noteOn(ORCHESTRA_MID_CHANNEL, noteNumber, (uint8)127);
-		midiOutputDevice->sendMessageNow(newMessage);
+		io.sendMIDIMessage(newMessage);
 		newMessage = MidiMessage::noteOff(ORCHESTRA_MID_CHANNEL, noteNumber);
-		midiOutputDevice->sendMessageNow(newMessage);
+		io.sendMIDIMessage(newMessage);
 		newMessage = MidiMessage::noteOn(ORCHESTRA_HIGH_CHANNEL, noteNumber, (uint8)127);
-		midiOutputDevice->sendMessageNow(newMessage);
+		io.sendMIDIMessage(newMessage);
 		newMessage = MidiMessage::noteOff(ORCHESTRA_HIGH_CHANNEL, noteNumber);
-		midiOutputDevice->sendMessageNow(newMessage);
+		io.sendMIDIMessage(newMessage);
 	}
 
 	void toggleLeslieState() {
 		auto newMessage = MidiMessage::controllerEvent(B3_CHANNEL, B3_LESLIE_CC, 127*leslieState);
-		midiOutputDevice->sendMessageNow(newMessage);
+		io.sendMIDIMessage(newMessage);
 		leslieState = !leslieState;
 	}
 
@@ -402,47 +263,32 @@ private:
 			description = message.getDescription();
 		}
 		String midiMessageString(source + ": " + description);
-		logMessage(midiMessageString);
+		monitor.logMessage(midiMessageString);
 	}
 
 	//==============================================================================
-	// MIDI Input
-	AudioDeviceManager deviceManager;
-	Label midiInputsLabel;
-	StringArray midiInputsNames;
-	OwnedArray<ToggleButton> midiInputButtons;
-
-	// MIDI Output
-	std::unique_ptr<MidiOutput> midiOutputDevice;
-	ComboBox midiOutputList;
-	Label midiOutputListLabel;
-	int lastOutputIndex = 0;
-	bool isAddingFromMidiOutput = false;
+	AudioDeviceManager* deviceManager;
+	
+	// MIDI IO
+	IOComponent io;
 
 	// MIDI Display
-	TextEditor midiMessagesBox;
-	uint16_t numberDisplayedMessages = 0;
-	double startTime;
+	MonitorComponent monitor;
 
 	// Zone File Management
-	TextButton directoryOpenButton;
-	TextButton previousFileButton;
-	TextButton nextFileButton;
-	Label currentFileNameLabel;
-
+	FilesComponent files;
+	
 	// Zones Management
 	std::map<uint8_t, json> currentZones;
 	std::vector<std::map<uint8_t, json>> setlist;
 	std::vector<String> setlistNames;
 	std::vector<json> programChangesList;
 	int currentFileIdx;
-
+	
 	// CC Management
 	std::map<int, int> ccMapping;
 	std::map<int, int> ccMappingChannels;
-	Label keyboardName;
-	TextButton ccMappingFileOpenButton;
-
+	
 	// B3 Leslie Management
 	bool leslieState = false;
 
