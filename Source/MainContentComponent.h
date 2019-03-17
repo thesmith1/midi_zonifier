@@ -118,13 +118,51 @@ private:
 			try {
 				std::vector<int> zoneIndices = findZones(message.getChannel(), message.getNoteNumber());
 				for (int index : zoneIndices) {
-					// Change the channel
-					newMessage.setChannel((int)currentZones[message.getChannel()][index]["outChannel"]);
-					// Transpose
-					newMessage.setNoteNumber(message.getNoteNumber() + (int)currentZones[message.getChannel()][index]["transpose"]);
-					// Send message
-					io.sendMIDIMessage(newMessage);
-					postMessageToList(newMessage, source->getName());
+					json harmony = currentZones[message.getChannel()][index]["harmony"];
+					if (!harmony.is_null()) { // If harmony exists
+						bool isFound = false;
+						for (json harmonyEl : harmony) {
+							if (harmonyEl["inNote"] == message.getNoteNumber()) {
+								isFound = true;
+								bool canDo = true;
+								if (message.isNoteOn() && !isHarmonyNoteOn) isHarmonyNoteOn = true;
+								else if (message.isNoteOff() && !isHarmonyTwoNoteOn) isHarmonyNoteOn = false;
+								else if (message.isNoteOn() && isHarmonyNoteOn) {
+									isHarmonyTwoNoteOn = true;
+									auto newMessage = MidiMessage::allNotesOff(message.getChannel());
+									io.sendMIDIMessage(newMessage);
+								}
+								else if (message.isNoteOff() && isHarmonyTwoNoteOn) canDo = false;
+								// Send messages
+								if (canDo) {
+									for (auto outNote : harmonyEl["outNotes"]) {
+										newMessage.setChannel((int)currentZones[message.getChannel()][index]["outChannel"]);
+										newMessage.setNoteNumber(outNote + (int)currentZones[message.getChannel()][index]["transpose"]);
+										io.sendMIDIMessage(newMessage);
+										postMessageToList(newMessage, source->getName());
+									}
+								}
+							}
+						}
+						if (!isFound) {
+							// Change the channel
+							newMessage.setChannel((int)currentZones[message.getChannel()][index]["outChannel"]);
+							// Transpose
+							newMessage.setNoteNumber(message.getNoteNumber() + (int)currentZones[message.getChannel()][index]["transpose"]);
+							// Send message
+							io.sendMIDIMessage(newMessage);
+							postMessageToList(newMessage, source->getName());
+						}
+					}
+					else {
+						// Change the channel
+						newMessage.setChannel((int)currentZones[message.getChannel()][index]["outChannel"]);
+						// Transpose
+						newMessage.setNoteNumber(message.getNoteNumber() + (int)currentZones[message.getChannel()][index]["transpose"]);
+						// Send message
+						io.sendMIDIMessage(newMessage);
+						postMessageToList(newMessage, source->getName());
+					}
 				}
 			}
 			catch (const std::out_of_range) {
@@ -155,7 +193,6 @@ private:
 			io.sendMIDIMessage(newMessage);
 			postMessageToList(newMessage, source->getName());
 		}
-		postMessageToList(message, source->getName());
 	}
 	
 	void sendProgramChanges() {
@@ -291,6 +328,10 @@ private:
 	
 	// B3 Leslie Management
 	bool leslieState = false;
+	
+	// Harmony NoteOnOff
+	bool isHarmonyNoteOn = false;
+	bool isHarmonyTwoNoteOn = false;
 
 	//==============================================================================
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainContentComponent);

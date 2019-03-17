@@ -70,11 +70,12 @@ void FilesComponent::openDirectory() {
 		File folder = fileChooser.getResult();
 		DirectoryIterator iter(folder, false, "*.json", File::findFiles);
 		localSetlist.clear();
+		localSetlistNames.clear();
 		while (iter.next()) {
 			json file_content = readFile(iter.getFile());
 			addToSetlist(file_content["zones"]);
 			localProgramChangesList.push_back(file_content["programChanges"]);
-			localSetlistNames.push_back(iter.getFile().getFileName());
+			localSetlistNames.push_back(iter.getFile().getFileNameWithoutExtension());
 		}
 		localCurrentFileIdx = 0;
 		localCurrentZones = localSetlist[0];

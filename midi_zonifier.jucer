@@ -1,14 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="HQ0GgE" name="midi_zonifier" projectType="guiapp" jucerVersion="5.4.1"
-              companyName="Giorgio Fabbro" version="0.1">
+              companyName="Giorgio Fabbro" version="1.0">
   <MAINGROUP id="KyAjDv" name="midi_zonifier">
     <GROUP id="{3EE0888F-68C8-36BA-DC52-696DB1901DC3}" name="Assets">
       <GROUP id="{6638880A-D4EF-5AA5-90F4-3E77740A8EC5}" name="img">
         <FILE id="FWaUFi" name="logo.pptx" compile="0" resource="1" file="Assets/img/logo.pptx"/>
         <FILE id="Ie9BTB" name="logo_big.png" compile="0" resource="1" file="Assets/img/logo_big.png"/>
         <FILE id="SD67MG" name="logo_small.png" compile="0" resource="1" file="Assets/img/logo_small.png"/>
-        <FILE id="jdZUoO" name="banner.png" compile="0" resource="1" file="Assets/img/banner.png"/>
       </GROUP>
     </GROUP>
     <GROUP id="{4E4C3CA0-612D-A98F-2164-C371CAEBDFB1}" name="Source">
