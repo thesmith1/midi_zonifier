@@ -26,6 +26,7 @@ public:
 
 	void sendMIDIMessage(const MidiMessage& message);
 	void sendMIDIClockBeat();
+	void sendNoteOffToAll();
 
 	void addListener(ActionListener* listener);
 	void removeListener(ActionListener* listener);

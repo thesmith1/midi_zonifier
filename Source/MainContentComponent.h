@@ -137,11 +137,13 @@ private:
 			ccMappingChannels = files.getCCMappingChannels();
 		}
 		else if (message.compare("loadPreviousFile") == 0) {
+			io.sendNoteOffToAll();
 			this->currentFileIdx = files.getCurrentFileIdx();
 			this->currentZones = setlist[currentFileIdx];
 			sendProgramChanges();
 		}
 		else if (message.compare("loadNextFile") == 0) {
+			io.sendNoteOffToAll();
 			this->currentFileIdx = files.getCurrentFileIdx();
 			this->currentZones = setlist[currentFileIdx];
 			sendProgramChanges();

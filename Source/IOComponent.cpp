@@ -93,6 +93,14 @@ void IOComponent::sendMIDIClockBeat()
 	}
 }
 
+void IOComponent::sendNoteOffToAll()
+{
+	for (unsigned int chIdx = 1; chIdx <= 16; ++chIdx) {
+		MidiMessage allNoteOff = MidiMessage::allNotesOff(chIdx);
+		midiOutputDevice->sendMessageNow(allNoteOff);
+	}
+}
+
 void IOComponent::addListener(ActionListener * listener)
 {
 	this->addActionListener(listener);
