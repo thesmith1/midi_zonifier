@@ -85,6 +85,14 @@ void IOComponent::sendMIDIMessage(const MidiMessage& message) {
 	midiOutputDevice->sendMessageNow(message);
 }
 
+void IOComponent::sendMIDIClockBeat()
+{
+	MidiMessage clock = MidiMessage::midiClock();
+	for (unsigned int i = 0; i < 24; ++i) {
+		midiOutputDevice->sendMessageNow(clock);
+	}
+}
+
 void IOComponent::addListener(ActionListener * listener)
 {
 	this->addActionListener(listener);

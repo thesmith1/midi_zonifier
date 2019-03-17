@@ -25,6 +25,7 @@ public:
 	bool setMidiOutput(int index);
 
 	void sendMIDIMessage(const MidiMessage& message);
+	void sendMIDIClockBeat();
 
 	void addListener(ActionListener* listener);
 	void removeListener(ActionListener* listener);

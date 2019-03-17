@@ -6,6 +6,7 @@
 #include "IOComponent.h"
 #include "FilesComponent.h"
 #include "BinaryData.h"
+#include "aubio/aubio.h"
 
 #define NUM_MIDI_CHANNELS 16
 
@@ -28,19 +29,25 @@
 using json = nlohmann::json;
 
 //==============================================================================
-class MainContentComponent : public Component,
+class MainContentComponent : public AudioAppComponent,
 	private MidiInputCallback, ActionListener
 {
 public:
-	MainContentComponent()
+	MainContentComponent() : audioSetup(deviceManager,
+		0, 256, 0, 256,
+		false, false, false, false)
 	{
 		setOpaque(true);
 
+		addAndMakeVisible(audioSetup);
+		
+		setAudioChannels(2, 0);
+
 		// Set up device manager to pass to IO --> there should be a better way
-		deviceManager = new AudioDeviceManager();
+		devices = new AudioDeviceManager();
 
 		// MIDI IO
-		io.setDeviceManager(deviceManager);
+		io.setDeviceManager(devices);
 		addAndMakeVisible(io);
 		io.addListener(this);
 
@@ -60,7 +67,9 @@ public:
 
 	~MainContentComponent()
 	{
-		delete deviceManager;
+		del_aubio_tempo(beatTracker);
+		shutdownAudio();
+		delete devices;
 	}
 
 	void paint(Graphics& g) override
@@ -70,19 +79,48 @@ public:
 
 	void resized() override
 	{
-		io.setBounds(EXT_MARGIN, EXT_MARGIN, getWidth() / 2 - INT_MARGIN *2, getHeight() / 2 - INT_MARGIN *2);
-		files.setBounds(getWidth() / 2 + INT_MARGIN, EXT_MARGIN, getWidth() / 2 - INT_MARGIN - EXT_MARGIN, getHeight() / 2 - INT_MARGIN * 2);
-		monitor.setBounds(EXT_MARGIN, getHeight() / 2 + INT_MARGIN, getWidth() - EXT_MARGIN * 2, getHeight() / 2 - INT_MARGIN - EXT_MARGIN);
+		io.setBounds(			EXT_MARGIN,						EXT_MARGIN,						getWidth() / 2 - INT_MARGIN *2,				getHeight() / 2 - INT_MARGIN *2);
+		files.setBounds(		getWidth() / 2 + INT_MARGIN,	EXT_MARGIN,						getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	getHeight() / 2 - INT_MARGIN * 2);
+		monitor.setBounds(		EXT_MARGIN,						getHeight() / 2 + INT_MARGIN,	getWidth() / 2 - INT_MARGIN * 2,			getHeight() / 2 - INT_MARGIN - EXT_MARGIN);
+		audioSetup.setBounds(	getWidth() / 2 + INT_MARGIN,	getHeight() / 2 + INT_MARGIN,	getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	getHeight() / 2 - INT_MARGIN - EXT_MARGIN);
 	}
+
+	void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override {
+		inputAubioBuffer = new_fvec(samplesPerBlockExpected);
+		beatTrackingResult = new_fvec(1);
+		beatTracker = new_aubio_tempo("default", (u_int)(samplesPerBlockExpected * 2), (u_int)samplesPerBlockExpected, (u_int)sampleRate);
+	}
+
+	void getNextAudioBlock(const AudioSourceChannelInfo& bufferToFill) override {
+		// Transfer JUCE audio buffer into Aubio buffer
+		for (int sampleIdx = 0; sampleIdx < bufferToFill.numSamples; ++sampleIdx) {
+			float sample = 0.0f;
+			// Downmix to mono
+			for (int chIdx = 0; chIdx < bufferToFill.buffer->getNumChannels(); ++chIdx) {
+				sample += bufferToFill.buffer->getSample(chIdx, sampleIdx);
+			}
+			sample /= bufferToFill.buffer->getNumChannels();
+			fvec_set_sample(inputAubioBuffer, (double)sample, sampleIdx);
+		}
+		bufferToFill.clearActiveBufferRegion();
+		// Execute beat detection
+		aubio_tempo_do(beatTracker, inputAubioBuffer, beatTrackingResult);
+		// If beat
+		if (beatTrackingResult->data[0] != 0) {
+			io.sendMIDIClockBeat();
+		}
+	}
+
+	void releaseResources() override {}
 
 private:
 	void actionListenerCallback(const String& message) override
 	{
 		if (message[0] == 'A') {
-			deviceManager->addMidiInputCallback(message.substring(1, message.length()), this);
+			devices->addMidiInputCallback(message.substring(1, message.length()), this);
 		}
 		else if (message[0] == 'D') {
-			deviceManager->removeMidiInputCallback(message.substring(1, message.length()), this);
+			devices->removeMidiInputCallback(message.substring(1, message.length()), this);
 		}
 		else if (message.compare("openDirectory") == 0) {
 			setlist.clear();
@@ -304,7 +342,7 @@ private:
 	}
 
 	//==============================================================================
-	AudioDeviceManager* deviceManager;
+	AudioDeviceManager* devices;
 	
 	// MIDI IO
 	IOComponent io;
@@ -332,6 +370,14 @@ private:
 	// Harmony NoteOnOff
 	bool isHarmonyNoteOn = false;
 	bool isHarmonyTwoNoteOn = false;
+
+	// Clock
+		// Audio In
+	AudioDeviceSelectorComponent audioSetup;
+		// Beat Tracking
+	aubio_tempo_t* beatTracker;
+	fvec_t* inputAubioBuffer;
+	fvec_t* beatTrackingResult;
 
 	//==============================================================================
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainContentComponent);
