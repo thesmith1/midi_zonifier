@@ -47,6 +47,11 @@ std::vector<json> FilesComponent::getProgramChangesList() {
 	return this->localProgramChangesList;
 }
 
+std::vector<json> FilesComponent::getBankSelectList()
+{
+	return localBankSelectList;
+}
+
 std::vector<std::map<uint8_t, json>> FilesComponent::getSetlist() {
 	return this->localSetlist;
 }
@@ -75,6 +80,7 @@ void FilesComponent::openDirectory() {
 			json file_content = readFile(iter.getFile());
 			addToSetlist(file_content["zones"]);
 			localProgramChangesList.push_back(file_content["programChanges"]);
+			localBankSelectList.push_back(file_content["bankSelects"]);
 			localSetlistNames.push_back(iter.getFile().getFileNameWithoutExtension());
 		}
 		localCurrentFileIdx = 0;

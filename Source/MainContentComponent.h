@@ -61,6 +61,18 @@ public:
 
 		// MIDI Display
 		addAndMakeVisible(monitor);
+
+		// Clock
+		addAndMakeVisible(clockActiveButton);
+		clockActiveButton.setButtonText("Enable Clock");
+		clockActiveButton.onClick = [this] {
+			if (clockActiveButton.getToggleState()) {
+				clockActiveButton.setButtonText("Disable Clock");
+			}
+			else {
+				clockActiveButton.setButtonText("Enable Clock");
+			}
+		};
 		
 		setSize(1000, 700);
 	}
@@ -79,10 +91,11 @@ public:
 
 	void resized() override
 	{
-		io.setBounds(			EXT_MARGIN,						EXT_MARGIN,						getWidth() / 2 - INT_MARGIN *2,				getHeight() / 2 - INT_MARGIN *2);
-		files.setBounds(		getWidth() / 2 + INT_MARGIN,	EXT_MARGIN,						getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	getHeight() / 2 - INT_MARGIN * 2);
-		monitor.setBounds(		EXT_MARGIN,						getHeight() / 2 + INT_MARGIN,	getWidth() / 2 - INT_MARGIN * 2,			getHeight() / 2 - INT_MARGIN - EXT_MARGIN);
-		audioSetup.setBounds(	getWidth() / 2 + INT_MARGIN,	getHeight() / 2 + INT_MARGIN,	getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	getHeight() / 2 - INT_MARGIN - EXT_MARGIN);
+		io.setBounds(					EXT_MARGIN,						EXT_MARGIN,								getWidth() / 2 - INT_MARGIN *2,				getHeight() / 2 - INT_MARGIN *2);
+		files.setBounds(				getWidth() / 2 + INT_MARGIN,	EXT_MARGIN,								getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	getHeight() / 2 - INT_MARGIN * 2);
+		monitor.setBounds(				EXT_MARGIN,						getHeight() / 2 + INT_MARGIN,			getWidth() / 2 - INT_MARGIN * 2,			getHeight() / 2 - INT_MARGIN - EXT_MARGIN);
+		audioSetup.setBounds(			getWidth() / 2 + INT_MARGIN,	getHeight() / 2 + INT_MARGIN,			getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	getHeight() / 2 - INT_MARGIN*2 - EXT_MARGIN*2 - 20);
+		clockActiveButton.setBounds(	getWidth() / 2 + INT_MARGIN,	getHeight() - EXT_MARGIN - INT_MARGIN - 20,	getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	20);
 	}
 
 	void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override {
@@ -92,22 +105,24 @@ public:
 	}
 
 	void getNextAudioBlock(const AudioSourceChannelInfo& bufferToFill) override {
-		// Transfer JUCE audio buffer into Aubio buffer
-		for (int sampleIdx = 0; sampleIdx < bufferToFill.numSamples; ++sampleIdx) {
-			float sample = 0.0f;
-			// Downmix to mono
-			for (int chIdx = 0; chIdx < bufferToFill.buffer->getNumChannels(); ++chIdx) {
-				sample += bufferToFill.buffer->getSample(chIdx, sampleIdx);
+		if (clockActiveButton.getToggleState()) {
+			// Transfer JUCE audio buffer into Aubio buffer
+			for (int sampleIdx = 0; sampleIdx < bufferToFill.numSamples; ++sampleIdx) {
+				float sample = 0.0f;
+				// Downmix to mono
+				for (int chIdx = 0; chIdx < bufferToFill.buffer->getNumChannels(); ++chIdx) {
+					sample += bufferToFill.buffer->getSample(chIdx, sampleIdx);
+				}
+				sample /= bufferToFill.buffer->getNumChannels();
+				fvec_set_sample(inputAubioBuffer, (double)sample, sampleIdx);
 			}
-			sample /= bufferToFill.buffer->getNumChannels();
-			fvec_set_sample(inputAubioBuffer, (double)sample, sampleIdx);
-		}
-		bufferToFill.clearActiveBufferRegion();
-		// Execute beat detection
-		aubio_tempo_do(beatTracker, inputAubioBuffer, beatTrackingResult);
-		// If beat
-		if (beatTrackingResult->data[0] != 0) {
-			io.sendMIDIClockBeat();
+			bufferToFill.clearActiveBufferRegion();
+			// Execute beat detection
+			aubio_tempo_do(beatTracker, inputAubioBuffer, beatTrackingResult);
+			// If beat
+			if (beatTrackingResult->data[0] != 0) {
+				io.sendMIDIClockBeat();
+			}
 		}
 	}
 
@@ -126,6 +141,7 @@ private:
 			setlist.clear();
 			currentFileIdx = 0;
 			programChangesList = files.getProgramChangesList();
+			bankSelectList = files.getBankSelectList();
 			setlist = files.getSetlist();
 			currentZones = setlist[currentFileIdx];
 			sendProgramChanges();
@@ -236,6 +252,11 @@ private:
 	}
 	
 	void sendProgramChanges() {
+		json currentBS = bankSelectList[currentFileIdx];
+		for (auto bs : currentBS) {
+			MidiMessage newMessage = MidiMessage::controllerEvent(bs["outChannel"], 0, bs["bankNumber"]);
+			io.sendMIDIMessage(newMessage);
+		}
 		json currentPC = programChangesList[currentFileIdx];
 		for (auto pc : currentPC) {
 			MidiMessage newMessage = MidiMessage::programChange(pc["outChannel"], pc["programChangeNumber"]);
@@ -360,6 +381,7 @@ private:
 	std::vector<std::map<uint8_t, json>> setlist;
 	std::vector<String> setlistNames;
 	std::vector<json> programChangesList;
+	std::vector<json> bankSelectList;
 	int currentFileIdx;
 	
 	// CC Management
@@ -380,6 +402,7 @@ private:
 	aubio_tempo_t* beatTracker;
 	fvec_t* inputAubioBuffer;
 	fvec_t* beatTrackingResult;
+	ToggleButton clockActiveButton;
 
 	//==============================================================================
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainContentComponent);

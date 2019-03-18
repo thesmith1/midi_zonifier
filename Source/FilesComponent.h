@@ -28,6 +28,7 @@ public:
 	void loadNextFile();
 
 	std::vector<json> getProgramChangesList();
+	std::vector<json> getBankSelectList();
 	std::vector<std::map<uint8_t, json>> getSetlist();
 	std::map<int, int> getCCMapping();
 	std::map<int, int> getCCMappingChannels();
@@ -51,6 +52,7 @@ private:
 	std::vector<std::map<uint8_t, json>> localSetlist;
 	std::vector<String> localSetlistNames;
 	std::vector<json> localProgramChangesList;
+	std::vector<json> localBankSelectList;
 	int localCurrentFileIdx;
 
 	// CC Management
