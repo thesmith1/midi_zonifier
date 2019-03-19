@@ -185,10 +185,13 @@ private:
 								else if (message.isNoteOff() && !isHarmonyTwoNoteOn) isHarmonyNoteOn = false;
 								else if (message.isNoteOn() && isHarmonyNoteOn) {
 									isHarmonyTwoNoteOn = true;
-									auto newMessage = MidiMessage::allNotesOff(message.getChannel());
+									auto newMessage = MidiMessage::allNotesOff((int)currentZones[message.getChannel()][index]["outChannel"]);
 									io.sendMIDIMessage(newMessage);
 								}
-								else if (message.isNoteOff() && isHarmonyTwoNoteOn) canDo = false;
+								else if (message.isNoteOff() && isHarmonyTwoNoteOn) {
+									canDo = false;
+									isHarmonyTwoNoteOn = false;
+								}
 								// Send messages
 								if (canDo) {
 									for (auto outNote : harmonyEl["outNotes"]) {
