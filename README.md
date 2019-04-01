@@ -1,3 +1,4 @@
+![](https://raw.githubusercontent.com/thesmith1/midi_zonifier/master/Assets/img/logo_small.png)
 # MIDI Zonifier
 
 ## About the MIDI Zonifier
@@ -9,6 +10,8 @@ The problem arises when you change the keyboard: all the configurations must be 
 In order to run the Zonifier you must compile it. The application is written in C++ and based on the JUCE framework.
 In addition to that, some dependency library is needed:
  - [Aubio](https://aubio.org/), compiled with support for FFTW3 and double precision.
+ 
+ **Caution:** the application is still in development, many bugs are still to be found.
 
 ## Features
 - Implement keyboard zones at software level, with any number of zones per configuration
