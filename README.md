@@ -15,11 +15,11 @@ In addition to that, some dependency library is needed:
  **Caution:** the application is still in development, many bugs are still to be found.
 
 ## Features
-- Implement keyboard zones at software level, with any number of zones per configuration
+- Implement keyboard zones at software level, with any number of (possibly overlapping) zones per configuration
 - Usage of multiple simultaneous controllers (as long as they are assigned to different MIDI channels)
 - Fast selection of zones configurations by means of MIDI Program Changes
 - Zone-wise transpose
-- Custom mapping of CCs
+- Custom many-to-many mapping of CCs
 - Send custom Program Changes when a configuration is selected
 
 ## Usage
@@ -50,7 +50,7 @@ The Zonifier works by reading configurations of zones in JSON files. A basic exa
 }
 ```
 
-This file assumes only one controller on MIDI channel 1 and divides its keyboard in two zones: the first one will output notes without transpose on channel 4, the second one will output notes on channel 5 with transpose of +12.
+This file assumes only one controller on MIDI channel 1 and divides its keyboard in two zones: the first one will output notes without transpose on channel 4, the second one will output notes on channel 5 with transpose of +12. You are completely free of choosing which notes belong to a zone: zones can overlap and there can be notes that do not belong to any zone (they won't be sent anywhere). Please note that startNote and endNote are included in the zone.
 
 In order to load a configuration on the Zonifier, click on Open Directory and select the folder that contains the file. (**Attention**: the folder you select must contain only JSON files that are configuration files of the Zonifier; any other JSON file and the application will crash!)
 
@@ -82,13 +82,13 @@ An example of CC mapping file is:
         },
         {
             "CConVST": 13,
-            "CConKey": 57,
+            "CConKey": 6,
             "outChannel": 1
         },
         {
-            "CConVST": 44,
+            "CConVST": 13,
             "CConKey": 1,
-            "outChannel": 12
+            "outChannel": 3
         },
         {
             "CConVST": 75,
@@ -98,7 +98,9 @@ An example of CC mapping file is:
     ]
 }
 ```	
-The CC mapping file is selected with the button "Open CC Mapping file...". Please, remember the previous warning: don't put the CC Mapping file in the same folder as the zone configurations files, or you will experience something really bad...
+Please note that the mapping is many-to-many, which means that a single knob can now control many parameters and a single parameters can be controlled by many knobs!
+
+The CC mapping file is selected with the button "Open CC Mapping file...". You may be tempted to put the CC Mapping file in the same folder with all the zone configuration files: remember the previous warning or bad things will happen...
 
 ### Program Changes
 The Zonifier is not just a way of having your zones saved and always there for you, it can also function as the brain that manages your live performance. Sometimes (maybe always), when a new song starts, you need to select a new preset from the infinity of choices that your keyboard offers you: either you need to manually input the preset number, or you need to search it manually (and the other members of the band will start to hate you...) or, even worse, since you have software instruments, you have to touch the mouse... Imagine having to do this for all your instruments, hardware and software!

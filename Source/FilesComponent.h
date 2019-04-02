@@ -30,8 +30,8 @@ public:
 	std::vector<json> getProgramChangesList();
 	std::vector<json> getBankSelectList();
 	std::vector<std::map<uint8_t, json>> getSetlist();
-	std::map<int, int> getCCMapping();
-	std::map<int, int> getCCMappingChannels();
+	std::map<int, std::vector<int>> getCCMapping();
+	std::map<int, std::vector<int>> getCCMappingChannels();
 	int getCurrentFileIdx();
 private:
 	void openDirectory();
@@ -58,8 +58,8 @@ private:
 	// CC Management
 	Label keyboardName;
 	TextButton ccMappingFileOpenButton;
-	std::map<int, int> localCCMapping;
-	std::map<int, int> localCCMappingChannels;
+	std::map<int, std::vector<int>> localCCMapping;
+	std::map<int, std::vector<int>> localCCMappingChannels;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FilesComponent)
 };

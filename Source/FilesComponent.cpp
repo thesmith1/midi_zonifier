@@ -56,11 +56,11 @@ std::vector<std::map<uint8_t, json>> FilesComponent::getSetlist() {
 	return this->localSetlist;
 }
 
-std::map<int, int> FilesComponent::getCCMapping() {
+std::map<int, std::vector<int>> FilesComponent::getCCMapping() {
 	return this->localCCMapping;
 }
 
-std::map<int, int> FilesComponent::getCCMappingChannels() {
+std::map<int, std::vector<int>> FilesComponent::getCCMappingChannels() {
 	return this->localCCMappingChannels;
 }
 
@@ -133,8 +133,12 @@ void FilesComponent::loadCCMapping(json newMapping) {
 	keyboardName.setText(newMapping["keyboardName"].get<std::string>(), dontSendNotification);
 	auto mapping = newMapping["ccMapping"];
 	for (auto entry : mapping) {
-		localCCMapping[entry["CConKey"]] = entry["CConVST"];
-		localCCMappingChannels[entry["CConKey"]] = entry["outChannel"];
+		if (localCCMapping.find(entry["CConKey"]) == localCCMapping.end()) {
+			localCCMapping[entry["CConKey"]] = std::vector<int>();
+			localCCMappingChannels[entry["CConKey"]] = std::vector<int>();
+		}
+		localCCMapping[entry["CConKey"]].push_back(entry["CConVST"]);
+		localCCMappingChannels[entry["CConKey"]].push_back(entry["outChannel"]);
 	}
 	this->sendActionMessage("loadCCMapping");
 }

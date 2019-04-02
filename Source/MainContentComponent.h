@@ -243,10 +243,14 @@ private:
 		else if (message.isController()) {
 			// Convert the CC
 			if (ccMapping.find(message.getControllerNumber()) != ccMapping.end()) {
-				newMessage = MidiMessage::controllerEvent(ccMappingChannels[message.getControllerNumber()], ccMapping[message.getControllerNumber()], message.getControllerValue());
+				auto outCCs = ccMapping[message.getControllerNumber()];
+				auto outCCsChannels = ccMappingChannels[message.getControllerNumber()];
+				for (unsigned idx = 0; idx < outCCs.size(); idx++) {
+					newMessage = MidiMessage::controllerEvent(outCCsChannels[idx], outCCs[idx], message.getControllerValue());
+					io.sendMIDIMessage(newMessage);
+					postMessageToList(newMessage, source->getName());
+				}
 			}
-			io.sendMIDIMessage(newMessage);
-			postMessageToList(newMessage, source->getName());
 		} else {
 			// MIDI Thru
 			io.sendMIDIMessage(newMessage);
@@ -388,8 +392,8 @@ private:
 	int currentFileIdx;
 	
 	// CC Management
-	std::map<int, int> ccMapping;
-	std::map<int, int> ccMappingChannels;
+	std::map<int, std::vector<int>> ccMapping;
+	std::map<int, std::vector<int>> ccMappingChannels;
 	
 	// B3 Leslie Management
 	bool leslieState = false;
