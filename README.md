@@ -10,6 +10,7 @@ The problem arises when you change the keyboard: all the configurations must be 
 In order to run the Zonifier you must compile it. The application is written in C++ and based on the JUCE framework.
 In addition to that, some dependency library is needed:
  - [Aubio](https://aubio.org/), compiled with support for FFTW3 and double precision.
+ - [JSON for Modern C++](https://github.com/nlohmann/json), header-only library, must be copied inside a folder named ExternalLib (sibling of Source).
  
  **Caution:** the application is still in development, many bugs are still to be found.
 
