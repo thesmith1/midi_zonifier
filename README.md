@@ -21,6 +21,7 @@ In addition to that, some dependency library is needed:
 - Zone-wise transpose
 - Custom many-to-many mapping of CCs
 - Send custom Program Changes when a configuration is selected
+- Per-zone, per-note custom harmonization
 
 ## Usage
 The Zonifier works by reading configurations of zones in JSON files. A basic example is:
@@ -153,3 +154,95 @@ Luckily, MIDI has a way of controlling which preset we are playing: Program Chan
     ]
 }
 ```
+
+### Harmony
+The Zonifier also implements a small function that resembles the Harmonizer you find in voice effect units: you can tell the Zonifier that when you play C4, it has to output C4, E4 and G4 at the same time. You can create chords from a single input. Actually it's more general: given any note, you can specify any set of notes as output! This may seem tedious to do (compared with "play a 3rd in C major", but it offers a lot of possibilities that a Harmonizer doesn't have.
+
+This feature can be used to harmonize (useful for example when playing with pad sounds) but also with arpeggiators: instead of physically playing all the notes that have to be arpeggiated, press one key and the Zonfier will do the rest for you. For example:
+
+```
+{
+    "zones": [
+        {
+            "inChannel": 15,
+            "zones": [
+                {
+                    "startNote": 36,
+                    "endNote": 51,
+                    "outChannel": 6,
+                    "transpose": 0,
+                    "harmony": [
+                        {
+                            "inNote": 41,
+                            "outNotes": [48, 53, 57, 60, 65, 69]
+                        },
+                        {
+                            "inNote": 43,
+                            "outNotes": [50, 55, 58, 62, 67, 70]
+                        },
+                        {
+                            "inNote": 45,
+                            "outNotes": [49, 52, 57, 61, 64, 69]
+                        },
+                        {
+                            "inNote": 50,
+                            "outNotes": [50, 53, 57, 62, 65, 69]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "inChannel": 14,
+            "zones": [
+                {
+                    "startNote": 52,
+                    "endNote": 82,
+                    "outChannel": 7,
+                    "transpose": 0
+                },
+                {
+                    "startNote": 83,
+                    "endNote": 83,
+                    "outChannel": 9,
+                    "transpose": -2
+                },
+                {
+                    "startNote": 84,
+                    "endNote": 84,
+                    "outChannel": 9,
+                    "transpose": -1
+                }
+            ]
+        }
+    ],
+    "programChanges": [
+        {
+            "outChannel": 6,
+            "programChangeNumber": 2
+        },
+        {
+            "outChannel": 7,
+            "programChangeNumber": 0
+        },
+        {
+            "outChannel": 16,
+            "programChangeNumber": 3
+        }
+    ],
+    "bankSelects": [
+        {
+            "outChannel": 6,
+            "bankNumber": 1
+        },
+        {
+            "outChannel": 16,
+            "bankNumber": 1
+        }
+    ]
+}
+```
+
+Note that the order of the output notes you write matters: some arpeggiators will arpeggiate the notes you input in the order you input them!
+
+What's important to consider is that, for the zones that have some harmonies, the Zonifier will work in monophony to avoid undesired effects (please, do not press more than two notes at a time on the same zone, or you will experience some undesired behavior).
