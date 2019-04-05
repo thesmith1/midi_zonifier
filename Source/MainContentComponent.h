@@ -35,7 +35,8 @@ class MainContentComponent : public AudioAppComponent,
 public:
 	MainContentComponent() : audioSetup(deviceManager,
 		0, 256, 0, 256,
-		false, false, false, false)
+		false, false, false, false),
+		vis(2)
 	{
 		setOpaque(true);
 
@@ -73,8 +74,13 @@ public:
 				clockActiveButton.setButtonText("Enable Clock");
 			}
 		};
+
+		// Audio Visualizer
+		addAndMakeVisible(vis);
+		vis.setBufferSize(2048);
+		vis.setColours(Colours::black, Colour(127, 219, 255));
 		
-		setSize(1000, 700);
+		setSize(1200, 1000);
 	}
 
 	~MainContentComponent()
@@ -91,11 +97,15 @@ public:
 
 	void resized() override
 	{
-		io.setBounds(					EXT_MARGIN,						EXT_MARGIN,								getWidth() / 2 - INT_MARGIN *2,				getHeight() / 2 - INT_MARGIN *2);
-		files.setBounds(				getWidth() / 2 + INT_MARGIN,	EXT_MARGIN,								getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	getHeight() / 2 - INT_MARGIN * 2);
-		monitor.setBounds(				EXT_MARGIN,						getHeight() / 2 + INT_MARGIN,			getWidth() / 2 - INT_MARGIN * 2,			getHeight() / 2 - INT_MARGIN - EXT_MARGIN);
-		audioSetup.setBounds(			getWidth() / 2 + INT_MARGIN,	getHeight() / 2 + INT_MARGIN,			getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	getHeight() / 2 - INT_MARGIN*2 - EXT_MARGIN*2 - 20);
-		clockActiveButton.setBounds(	getWidth() / 2 + INT_MARGIN,	getHeight() - EXT_MARGIN - INT_MARGIN - 20,	getWidth() / 2 - INT_MARGIN - EXT_MARGIN,	20);
+		int thirdHeight = getHeight() / 3;
+		int twoThirdsHeight = 2 * thirdHeight;
+		int halfWidth = getWidth() / 2;
+		io.setBounds(					EXT_MARGIN,						EXT_MARGIN,											halfWidth - INT_MARGIN *2,				thirdHeight - INT_MARGIN *2);
+		files.setBounds(				getWidth() / 2 + INT_MARGIN,	EXT_MARGIN,											halfWidth - INT_MARGIN - EXT_MARGIN,	thirdHeight - INT_MARGIN * 2);
+		monitor.setBounds(				EXT_MARGIN,						thirdHeight + INT_MARGIN,							getWidth() - INT_MARGIN * 2,			thirdHeight - INT_MARGIN - EXT_MARGIN);
+		vis.setBounds(					EXT_MARGIN,						twoThirdsHeight + INT_MARGIN,						halfWidth - INT_MARGIN * 2,				thirdHeight - INT_MARGIN - EXT_MARGIN);
+		audioSetup.setBounds(			halfWidth + INT_MARGIN,			twoThirdsHeight + INT_MARGIN,						halfWidth - INT_MARGIN - EXT_MARGIN,	thirdHeight - INT_MARGIN*2 - EXT_MARGIN*2 - 20);
+		clockActiveButton.setBounds(	halfWidth + INT_MARGIN,			getHeight() - EXT_MARGIN - INT_MARGIN - 20,			halfWidth - INT_MARGIN - EXT_MARGIN,	20);
 	}
 
 	void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override {
@@ -105,6 +115,7 @@ public:
 	}
 
 	void getNextAudioBlock(const AudioSourceChannelInfo& bufferToFill) override {
+		vis.pushBuffer(bufferToFill);
 		if (clockActiveButton.getToggleState()) {
 			// Transfer JUCE audio buffer into Aubio buffer
 			for (int sampleIdx = 0; sampleIdx < bufferToFill.numSamples; ++sampleIdx) {
@@ -410,6 +421,9 @@ private:
 	fvec_t* inputAubioBuffer;
 	fvec_t* beatTrackingResult;
 	ToggleButton clockActiveButton;
+
+	// Audio Visualizer
+	AudioVisualiserComponent vis;
 
 	//==============================================================================
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainContentComponent);
